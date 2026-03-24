@@ -40,6 +40,7 @@ services:
         condition: service_healthy
     ports:
       - "50051:50051"
+      - "50052:50052"
       - "50053:50053"
     environment:
       - SCALAR_DB_CONTACT_POINTS=jdbc:postgresql://postgres:5432/scalarist

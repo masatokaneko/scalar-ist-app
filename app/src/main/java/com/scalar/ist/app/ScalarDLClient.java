@@ -48,7 +48,15 @@ public class ScalarDLClient implements AutoCloseable {
    * Register a certificate for the current client.
    */
   public void registerCertificate() {
-    service.registerCertificate();
+    try {
+      service.registerCertificate();
+    } catch (Exception e) {
+      if (e.getMessage() != null && e.getMessage().contains("already registered")) {
+        // Certificate already registered, ignore
+      } else {
+        throw e;
+      }
+    }
   }
 
   @Override
