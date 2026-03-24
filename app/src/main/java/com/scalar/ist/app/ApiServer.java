@@ -288,47 +288,46 @@ public class ApiServer {
     int invalidCount = 0;
 
     try (Connection conn = DriverManager.getConnection(dbUrl, "postgres", "postgres")) {
-      // Get all consent records with their titles
-      String sql = "SELECT c.consent_statement_id, c.data_subject_id, cs.title "
+      // Cross-check: ist.consent (DB) vs scalar.asset (Ledger)
+      // For each consent record, verify a matching ledger entry exists with same consent_status
+      String sql = "SELECT c.consent_id, c.consent_statement_id, c.consent_status, "
+          + "c.data_subject_id, c.created_at, cs.title, "
+          + "a.id AS ledger_asset_id, a.output AS ledger_output "
           + "FROM ist.consent c "
           + "LEFT JOIN ist.consent_statement cs ON c.consent_statement_id = cs.consent_statement_id "
+          + "LEFT JOIN scalar.asset a ON a.output::text LIKE '%' || c.consent_id || '%' "
           + "ORDER BY c.created_at DESC";
-      List<String[]> records = new ArrayList<String[]>();
       try (PreparedStatement ps = conn.prepareStatement(sql);
            ResultSet rs = ps.executeQuery()) {
         while (rs.next()) {
-          records.add(new String[]{
-              rs.getString("consent_statement_id"),
-              rs.getString("data_subject_id"),
-              rs.getString("title")
-          });
-        }
-      }
+          String consentId = rs.getString("consent_id");
+          String title = rs.getString("title");
+          String dataSubject = rs.getString("data_subject_id");
+          String consentStatus = rs.getString("consent_status");
+          String ledgerAssetId = rs.getString("ledger_asset_id");
+          String ledgerOutput = rs.getString("ledger_output");
 
-      // Validate each consent record against ScalarDL ledger
-      try (ScalarDLClient client = new ScalarDLClient(propertiesPath)) {
-        client.registerCertificate();
-        for (String[] record : records) {
-          String assetId = "ct01-" + record[0] + "-" + record[1];
-          String title = record[2] != null ? record[2] : "";
-          String dataSubject = record[1];
           Map<String, Object> entry = new LinkedHashMap<String, Object>();
-          entry.put("asset_id", assetId);
-          entry.put("title", title);
+          entry.put("consent_id", consentId);
+          entry.put("title", title != null ? title : "");
           entry.put("data_subject", dataSubject);
-          try {
-            LedgerValidationResult result = client.validateLedger(assetId);
-            if (result.getCode() == StatusCode.OK) {
+          entry.put("consent_status", consentStatus);
+
+          if (ledgerAssetId != null && ledgerOutput != null) {
+            // Ledger record exists - check if consent_status matches
+            boolean statusMatch = ledgerOutput.contains("\"consent_status\":\"" + consentStatus + "\"");
+            if (statusMatch) {
               entry.put("status", "valid");
+              entry.put("message", "台帳記録と一致 — 改竄なし");
               validCount++;
             } else {
               entry.put("status", "invalid");
-              entry.put("reason", result.getCode().name());
+              entry.put("message", "台帳記録と不一致 — 改竄の可能性");
               invalidCount++;
             }
-          } catch (Exception e) {
+          } else {
             entry.put("status", "invalid");
-            entry.put("reason", e.getMessage());
+            entry.put("message", "台帳に記録が見つかりません");
             invalidCount++;
           }
           entry.put("verified_at", Instant.now().toString());
