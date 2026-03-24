@@ -117,8 +117,15 @@ public class StatusCommand implements Runnable {
     public void run() {
       System.out.println("=== 同意状態一覧 ===");
 
+      // consent_id = asset_name + "-" + consent_statement_id + "-" + holder_id(data_subject)
+      // GetConsentStatus requires consent_id and is_hashed_consent_id
+      // consent_id = asset_name + asset_version + "-" + consent_statement_id + "-" + holder_id
+      // asset_name = "ct", asset_version = "01"
+      String consentId = "ct01-" + statementId + "-data_subject";
+
       JsonObject argument = Json.createObjectBuilder()
-          .add("consent_statement_id", statementId)
+          .add("consent_id", consentId)
+          .add("is_hashed_consent_id", false)
           .build();
 
       try (ScalarDLClient client = new ScalarDLClient(propertiesPath)) {

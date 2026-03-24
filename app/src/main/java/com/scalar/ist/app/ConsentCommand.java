@@ -11,14 +11,19 @@ import picocli.CommandLine.Option;
     description = "同意文書の管理",
     subcommands = {
         ConsentCommand.CreateCommand.class,
-        ConsentCommand.PublishCommand.class,
-        ConsentCommand.ListCommand.class
+        ConsentCommand.PublishCommand.class
     })
 public class ConsentCommand implements Runnable {
 
   @Override
   public void run() {
-    System.out.println("サブコマンドを指定してください: create, publish, list");
+    System.out.println("サブコマンドを指定してください: create, publish");
+  }
+
+  // consent_statement_id = asset_name + asset_version + "-" + org_id + "-" + created_at
+  // asset_name = "cs", asset_version = "01" (コントラクトのpropertiesで定義)
+  static String buildConsentStatementId(String organizationId, long createdAt) {
+    return "cs01-" + organizationId + "-" + createdAt;
   }
 
   @Command(name = "create", description = "同意文書を新規作成（draft状態）")
@@ -42,6 +47,7 @@ public class ConsentCommand implements Runnable {
     public void run() {
       System.out.println("=== 同意文書作成 ===");
       long now = System.currentTimeMillis();
+      String consentStatementId = buildConsentStatementId(organizationId, now);
 
       JsonObject argument = Json.createObjectBuilder()
           .add("company_id", companyId)
@@ -64,15 +70,15 @@ public class ConsentCommand implements Runnable {
 
       try (ScalarDLClient client = new ScalarDLClient(propertiesPath)) {
         client.registerCertificate();
-        ContractExecutionResult result =
-            client.executeContract("RegisterConsentStatement", argument);
+        client.executeContract("RegisterConsentStatement", argument);
         System.out.println("→ 同意文書を作成しました（draft状態）");
-        if (result.getResult().isPresent()) {
-          System.out.println("  結果: " + result.getResult().get());
-        }
+        System.out.println("");
+        System.out.println("  consent_statement_id: " + consentStatementId);
+        System.out.println("");
+        System.out.println("  次のステップ:");
+        System.out.println("    公開: consent publish --id " + consentStatementId);
       } catch (Exception e) {
         System.err.println("→ 作成失敗: " + e.getMessage());
-        e.printStackTrace();
       }
     }
   }
@@ -82,8 +88,14 @@ public class ConsentCommand implements Runnable {
     @Option(names = "--properties", defaultValue = "config/controller.properties")
     private String propertiesPath;
 
-    @Option(names = "--id", required = true, description = "同意文書ID")
+    @Option(names = "--id", required = true, description = "同意文書ID (例: cs01-<org-id>-<timestamp>)")
     private String consentStatementId;
+
+    @Option(names = "--company-id", defaultValue = "scalar-labs.com")
+    private String companyId;
+
+    @Option(names = "--org-id", defaultValue = "9ca84f95-2e84-4707-8206-b93c9e78d7b7")
+    private String organizationId;
 
     @Override
     public void run() {
@@ -91,55 +103,23 @@ public class ConsentCommand implements Runnable {
       long now = System.currentTimeMillis();
 
       JsonObject argument = Json.createObjectBuilder()
+          .add("company_id", companyId)
+          .add("organization_id", organizationId)
           .add("consent_statement_id", consentStatementId)
-          .add("consent_statement_status", "published")
+          .add("status", "published")
           .add("updated_at", now)
-          .add("_functions_", Json.createArrayBuilder().add("UpdateConsentStatementStatus"))
+          .add("_functions_", Json.createArrayBuilder().add("UpsertConsentStatementStatus"))
           .build();
 
       try (ScalarDLClient client = new ScalarDLClient(propertiesPath)) {
         client.registerCertificate();
-        ContractExecutionResult result =
-            client.executeContract("UpdateConsentStatementStatus", argument);
+        client.executeContract("UpdateConsentStatementStatus", argument);
         System.out.println("→ 同意文書を公開しました（published状態）");
-        if (result.getResult().isPresent()) {
-          System.out.println("  結果: " + result.getResult().get());
-        }
+        System.out.println("");
+        System.out.println("  次のステップ:");
+        System.out.println("    同意: status approve --statement-id " + consentStatementId + " --subject <data-subject-id>");
       } catch (Exception e) {
         System.err.println("→ 公開失敗: " + e.getMessage());
-        e.printStackTrace();
-      }
-    }
-  }
-
-  @Command(name = "list", description = "同意文書の履歴を表示")
-  static class ListCommand implements Runnable {
-    @Option(names = "--properties", defaultValue = "config/controller.properties")
-    private String propertiesPath;
-
-    @Option(names = "--company-id", defaultValue = "scalar-labs.com")
-    private String companyId;
-
-    @Override
-    public void run() {
-      System.out.println("=== 同意文書一覧 ===");
-
-      JsonObject argument = Json.createObjectBuilder()
-          .add("company_id", companyId)
-          .build();
-
-      try (ScalarDLClient client = new ScalarDLClient(propertiesPath)) {
-        client.registerCertificate();
-        ContractExecutionResult result =
-            client.executeContract("GetConsentStatementHistory", argument);
-        if (result.getResult().isPresent()) {
-          System.out.println(result.getResult().get());
-        } else {
-          System.out.println("同意文書が見つかりませんでした");
-        }
-      } catch (Exception e) {
-        System.err.println("→ 取得失敗: " + e.getMessage());
-        e.printStackTrace();
       }
     }
   }
