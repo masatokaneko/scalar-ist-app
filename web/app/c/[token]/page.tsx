@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 
 const API = "http://localhost:8081/api";
 
-type Choice = { tag: string; label: string; required: boolean };
+type Choice = { tag: string; label: string; required: boolean; document?: string };
 type Invitation = {
   token: string; scenario: string; title: string;
   decisionType: string; decisionMode: string;
@@ -18,6 +18,7 @@ export default function ConsentPage() {
   const token = params.token as string;
   const [inv, setInv] = useState<Invitation | null>(null);
   const [checked, setChecked] = useState<Record<number, boolean>>({});
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [step, setStep] = useState<"loading" | "review" | "confirm" | "done" | "error">("loading");
   const [decision, setDecision] = useState<string>("");
   const [timestamp, setTimestamp] = useState<string>("");
@@ -185,28 +186,41 @@ export default function ConsentPage() {
           {/* Choices */}
           <div className="space-y-3 mb-6">
             {inv.choices.map((c, i) => (
-              <label key={i}
-                className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                  checked[i] ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
-                } ${c.required ? "" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={checked[i] || false}
-                  disabled={c.required}
-                  onChange={() => setChecked({ ...checked, [i]: !checked[i] })}
-                  className="mt-0.5 w-5 h-5 rounded"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{c.label}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${
-                      c.required ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-500"
-                    }`}>
-                      {c.tag}
-                    </span>
+              <div key={i} className={`rounded-xl border-2 transition-all ${
+                checked[i] ? "border-blue-500 bg-blue-50" : "border-gray-200"
+              }`}>
+                <label className="flex items-start gap-3 p-4 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checked[i] || false}
+                    disabled={c.required}
+                    onChange={() => setChecked({ ...checked, [i]: !checked[i] })}
+                    className="mt-0.5 w-5 h-5 rounded"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{c.label}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        c.required ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-500"
+                      }`}>
+                        {c.tag}
+                      </span>
+                    </div>
+                    {c.document && (
+                      <button type="button"
+                        onClick={(e) => { e.preventDefault(); setExpanded({ ...expanded, [i]: !expanded[i] }); }}
+                        className="text-xs text-blue-600 mt-1 hover:underline">
+                        {expanded[i] ? "▼ 文書を閉じる" : "▶ 文書の内容を確認する"}
+                      </button>
+                    )}
                   </div>
-                </div>
-              </label>
+                </label>
+                {c.document && expanded[i] && (
+                  <div className="mx-4 mb-4 p-3 bg-white rounded-lg border text-xs text-gray-600 leading-relaxed">
+                    {c.document}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
 

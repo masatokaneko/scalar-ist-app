@@ -433,21 +433,33 @@ public class ApiServer {
     List<Map<String, Object>> choices = new ArrayList<Map<String, Object>>();
     String scenario = (String) inv.get("scenario");
     if ("service_signup".equals(scenario)) {
-      choices.add(choice("必須", "アカウント作成・不正検知のための利用", true));
-      choices.add(choice("任意", "マーケティングメールの配信", false));
-      choices.add(choice("任意", "アクセス解析によるサービス改善", false));
+      choices.add(choice("必須", "アカウント作成・不正検知のための利用", true,
+          "当社はお客様のアカウント作成、本人確認、不正アクセスの検知・防止のために、お名前、メールアドレス、IPアドレス等の個人情報を収集・利用いたします。これらの情報は当社のサービス提供に必要不可欠であり、ご同意いただけない場合はサービスをご利用いただけません。"));
+      choices.add(choice("任意", "マーケティングメールの配信", false,
+          "当社はお客様のメールアドレスを利用して、新機能のお知らせ、キャンペーン情報、ニュースレター等のマーケティングメールを配信することがあります。配信の停止はいつでも可能です。"));
+      choices.add(choice("任意", "アクセス解析によるサービス改善", false,
+          "当社はお客様のサービス利用状況（閲覧ページ、利用時間、クリック履歴等）を匿名化した上で分析し、サービスの品質向上・新機能開発に活用いたします。"));
     } else if ("contractor_nda".equals(scenario)) {
-      choices.add(choice("必須", "秘密保持契約書への同意", true));
-      choices.add(choice("必須", "情報セキュリティポリシーの遵守", true));
+      choices.add(choice("必須", "秘密保持契約書への同意", true,
+          "本契約において「秘密情報」とは、開示者が受領者に対して開示する一切の情報（技術情報、営業情報、顧客情報、経営情報を含むがこれに限らない）をいいます。受領者は、秘密情報を善良なる管理者の注意をもって管理し、開示者の事前の書面による承諾なく第三者に開示または漏洩してはなりません。本契約の有効期間は締結日から3年間とし、秘密保持義務は契約終了後もなお5年間存続するものとします。"));
+      choices.add(choice("必須", "情報セキュリティポリシーの遵守", true,
+          "業務委託先として当社の情報セキュリティポリシーを遵守することに同意します。具体的には、業務で知り得た情報の持ち出し禁止、私用デバイスでの業務データ取扱い禁止、セキュリティインシデント発生時の即時報告義務、退場時の全データ返却・削除等が含まれます。"));
     } else if ("employee_onboarding".equals(scenario)) {
-      choices.add(choice("必須", "就業規則への同意", true));
-      choices.add(choice("必須", "情報セキュリティポリシーへの同意", true));
-      choices.add(choice("必須", "個人情報取扱いへの同意", true));
-      choices.add(choice("必須", "ハラスメント防止規定への同意", true));
+      choices.add(choice("必須", "就業規則への同意", true,
+          "当社の就業規則を確認し、遵守することに同意します。就業規則には、勤務時間、休日・休暇、服務規律、懲戒処分、退職・解雇に関する事項等が定められています。就業規則の全文は社内ポータルで閲覧できます。"));
+      choices.add(choice("必須", "情報セキュリティポリシーへの同意", true,
+          "当社の情報セキュリティポリシーを確認し、遵守することに同意します。社内システムへのアクセス管理、パスワード管理、メール・インターネット利用規定、情報資産の分類と取扱い、インシデント対応手順等が含まれます。"));
+      choices.add(choice("必須", "個人情報取扱いへの同意", true,
+          "当社は入社に伴い、お名前、住所、生年月日、マイナンバー、給与振込口座等の個人情報を取得します。これらは人事管理、給与計算、社会保険手続き、税務処理の目的で利用し、法令に基づく場合を除き第三者に提供しません。"));
+      choices.add(choice("必須", "ハラスメント防止規定への同意", true,
+          "当社のハラスメント防止規定を確認し、遵守することに同意します。セクシュアルハラスメント、パワーハラスメント、マタニティハラスメント等あらゆるハラスメント行為を禁止します。相談窓口は人事部に設置されており、相談者のプライバシーは厳格に保護されます。"));
     } else if ("cookie_preferences".equals(scenario)) {
-      choices.add(choice("必須", "必須Cookie（サイト機能）", true));
-      choices.add(choice("任意", "分析Cookie（アクセス解析）", false));
-      choices.add(choice("任意", "広告Cookie（ターゲティング広告）", false));
+      choices.add(choice("必須", "必須Cookie（サイト機能）", true,
+          "サイトの基本機能（ログイン状態の維持、セキュリティ、ページ表示等）に必要なCookieです。これらのCookieなしではサイトが正常に機能しないため、無効にすることはできません。"));
+      choices.add(choice("任意", "分析Cookie（アクセス解析）", false,
+          "Google Analytics等のツールを使用して、訪問者数、閲覧ページ、滞在時間等のデータを収集します。データは匿名化され、サイトの改善目的にのみ使用されます。"));
+      choices.add(choice("任意", "広告Cookie（ターゲティング広告）", false,
+          "お客様の閲覧履歴に基づいて、関連性の高い広告を表示するためのCookieです。広告パートナー（Google Ads、Facebook等）と情報を共有する場合があります。"));
     }
 
     Map<String, Object> response = new LinkedHashMap<String, Object>(inv);
@@ -456,10 +468,15 @@ public class ApiServer {
   }
 
   private Map<String, Object> choice(String tag, String label, boolean required) {
+    return choice(tag, label, required, "");
+  }
+
+  private Map<String, Object> choice(String tag, String label, boolean required, String document) {
     Map<String, Object> c = new LinkedHashMap<String, Object>();
     c.put("tag", tag);
     c.put("label", label);
     c.put("required", required);
+    c.put("document", document);
     return c;
   }
 
