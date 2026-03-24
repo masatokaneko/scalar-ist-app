@@ -324,8 +324,6 @@ public class ApiServer {
     String[][] scenarios = {
         {"service_signup", "サービス登録時の個人情報取得同意", "consent", "granular"},
         {"contractor_nda", "業務委託先NDA（秘密保持契約）", "acknowledgement", "all_required"},
-        {"employee_onboarding", "入社時の規則同意", "acknowledgement", "all_required"},
-        {"cookie_preferences", "Cookie利用設定", "preference", "granular"},
     };
     String companyId = "scalar-labs.com";
     String orgId = "9ca84f95-2e84-4707-8206-b93c9e78d7b7";
@@ -433,33 +431,42 @@ public class ApiServer {
     List<Map<String, Object>> choices = new ArrayList<Map<String, Object>>();
     String scenario = (String) inv.get("scenario");
     if ("service_signup".equals(scenario)) {
-      choices.add(choice("必須", "アカウント作成・不正検知のための利用", true,
-          "当社はお客様のアカウント作成、本人確認、不正アクセスの検知・防止のために、お名前、メールアドレス、IPアドレス等の個人情報を収集・利用いたします。これらの情報は当社のサービス提供に必要不可欠であり、ご同意いただけない場合はサービスをご利用いただけません。"));
-      choices.add(choice("任意", "マーケティングメールの配信", false,
-          "当社はお客様のメールアドレスを利用して、新機能のお知らせ、キャンペーン情報、ニュースレター等のマーケティングメールを配信することがあります。配信の停止はいつでも可能です。"));
-      choices.add(choice("任意", "アクセス解析によるサービス改善", false,
-          "当社はお客様のサービス利用状況（閲覧ページ、利用時間、クリック履歴等）を匿名化した上で分析し、サービスの品質向上・新機能開発に活用いたします。"));
+      choices.add(dataSet("必須", "サービス提供のための個人情報利用", true,
+          "アカウント作成・本人確認・不正検知",
+          new String[]{"氏名", "メールアドレス", "電話番号", "IPアドレス"},
+          null, "サービス退会後1年間", "サービスの安定的な提供"));
+      choices.add(dataSet("必須", "カスタマーサポート対応", true,
+          "お問い合わせ対応・サポート品質の向上",
+          new String[]{"氏名", "メールアドレス", "お問い合わせ内容"},
+          null, "最後のお問い合わせから3年間", "迅速なサポート対応"));
+      choices.add(dataSet("任意", "マーケティングメール配信", false,
+          "新機能のお知らせ・キャンペーン情報の配信",
+          new String[]{"メールアドレス", "サービス利用履歴"},
+          null, "同意撤回まで", "お得なキャンペーン情報・新機能の先行案内"));
+      choices.add(dataSet("任意", "アクセス解析によるサービス改善", false,
+          "利用状況の分析・サービス品質向上",
+          new String[]{"閲覧ページ", "利用時間", "クリック履歴", "デバイス情報"},
+          "Google Analytics（匿名化処理済み）", "収集から2年間", "より使いやすいサービスの提供"));
+      choices.add(dataSet("任意", "広告パートナーへのデータ提供", false,
+          "ターゲティング広告の表示",
+          new String[]{"Cookie識別子", "閲覧履歴", "興味関心カテゴリ"},
+          "広告パートナー A社・B社", "同意撤回まで", "関連性の高い広告による快適な体験"));
     } else if ("contractor_nda".equals(scenario)) {
-      choices.add(choice("必須", "秘密保持契約書への同意", true,
-          "本契約において「秘密情報」とは、開示者が受領者に対して開示する一切の情報（技術情報、営業情報、顧客情報、経営情報を含むがこれに限らない）をいいます。受領者は、秘密情報を善良なる管理者の注意をもって管理し、開示者の事前の書面による承諾なく第三者に開示または漏洩してはなりません。本契約の有効期間は締結日から3年間とし、秘密保持義務は契約終了後もなお5年間存続するものとします。"));
-      choices.add(choice("必須", "情報セキュリティポリシーの遵守", true,
-          "業務委託先として当社の情報セキュリティポリシーを遵守することに同意します。具体的には、業務で知り得た情報の持ち出し禁止、私用デバイスでの業務データ取扱い禁止、セキュリティインシデント発生時の即時報告義務、退場時の全データ返却・削除等が含まれます。"));
-    } else if ("employee_onboarding".equals(scenario)) {
-      choices.add(choice("必須", "就業規則への同意", true,
-          "当社の就業規則を確認し、遵守することに同意します。就業規則には、勤務時間、休日・休暇、服務規律、懲戒処分、退職・解雇に関する事項等が定められています。就業規則の全文は社内ポータルで閲覧できます。"));
-      choices.add(choice("必須", "情報セキュリティポリシーへの同意", true,
-          "当社の情報セキュリティポリシーを確認し、遵守することに同意します。社内システムへのアクセス管理、パスワード管理、メール・インターネット利用規定、情報資産の分類と取扱い、インシデント対応手順等が含まれます。"));
-      choices.add(choice("必須", "個人情報取扱いへの同意", true,
-          "当社は入社に伴い、お名前、住所、生年月日、マイナンバー、給与振込口座等の個人情報を取得します。これらは人事管理、給与計算、社会保険手続き、税務処理の目的で利用し、法令に基づく場合を除き第三者に提供しません。"));
-      choices.add(choice("必須", "ハラスメント防止規定への同意", true,
-          "当社のハラスメント防止規定を確認し、遵守することに同意します。セクシュアルハラスメント、パワーハラスメント、マタニティハラスメント等あらゆるハラスメント行為を禁止します。相談窓口は人事部に設置されており、相談者のプライバシーは厳格に保護されます。"));
-    } else if ("cookie_preferences".equals(scenario)) {
-      choices.add(choice("必須", "必須Cookie（サイト機能）", true,
-          "サイトの基本機能（ログイン状態の維持、セキュリティ、ページ表示等）に必要なCookieです。これらのCookieなしではサイトが正常に機能しないため、無効にすることはできません。"));
-      choices.add(choice("任意", "分析Cookie（アクセス解析）", false,
-          "Google Analytics等のツールを使用して、訪問者数、閲覧ページ、滞在時間等のデータを収集します。データは匿名化され、サイトの改善目的にのみ使用されます。"));
-      choices.add(choice("任意", "広告Cookie（ターゲティング広告）", false,
-          "お客様の閲覧履歴に基づいて、関連性の高い広告を表示するためのCookieです。広告パートナー（Google Ads、Facebook等）と情報を共有する場合があります。"));
+      choices.add(dataSet("必須", "秘密保持契約（NDA）", true,
+          "業務上知り得た秘密情報の保護",
+          new String[]{"技術情報", "営業情報", "顧客情報", "経営情報", "ソースコード"},
+          null, "契約終了後5年間",
+          "本契約において「秘密情報」とは、開示者が受領者に対して開示する一切の情報をいいます。受領者は善良なる管理者の注意をもって管理し、開示者の事前の書面による承諾なく第三者に開示・漏洩してはなりません。違反した場合は損害賠償責任を負うものとします。"));
+      choices.add(dataSet("必須", "情報セキュリティポリシー遵守", true,
+          "情報資産の適切な管理と保護",
+          new String[]{"業務データ", "アクセスログ", "入退室記録"},
+          null, "業務委託期間中",
+          "業務で知り得た情報の持ち出し禁止、私用デバイスでの業務データ取扱い禁止、セキュリティインシデント発生時の即時報告義務、退場時の全データ返却・削除を遵守するものとします。"));
+      choices.add(dataSet("必須", "個人情報の適切な取扱い", true,
+          "業務で取り扱う個人情報の保護",
+          new String[]{"顧客の氏名", "顧客のメールアドレス", "顧客の取引履歴"},
+          null, "業務委託期間中",
+          "業務委託の遂行に必要な範囲でのみ個人情報を取り扱い、目的外利用・複製・持ち出しを禁止します。個人情報の漏洩が判明した場合は直ちに委託元に報告するものとします。"));
     }
 
     Map<String, Object> response = new LinkedHashMap<String, Object>(inv);
@@ -477,6 +484,22 @@ public class ApiServer {
     c.put("label", label);
     c.put("required", required);
     c.put("document", document);
+    return c;
+  }
+
+  private Map<String, Object> dataSet(String tag, String label, boolean required,
+      String purpose, String[] dataItems, String thirdParty, String retention, String benefit) {
+    Map<String, Object> c = new LinkedHashMap<String, Object>();
+    c.put("tag", tag);
+    c.put("label", label);
+    c.put("required", required);
+    c.put("purpose", purpose);
+    List<String> items = new ArrayList<String>();
+    for (String item : dataItems) items.add(item);
+    c.put("dataItems", items);
+    c.put("thirdParty", thirdParty);
+    c.put("retention", retention);
+    c.put("benefit", benefit);
     return c;
   }
 

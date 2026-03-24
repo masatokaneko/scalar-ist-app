@@ -25,10 +25,8 @@ export default function Home() {
   };
 
   const scenarioInfo: Record<string, { icon: string; desc: string; color: string }> = {
-    service_signup: { icon: "👤", desc: "ユーザーがサービス登録時に個人情報の利用に同意する", color: "blue" },
-    contractor_nda: { icon: "🔒", desc: "業務委託の常駐者がNDA（秘密保持契約）に同意する", color: "purple" },
-    employee_onboarding: { icon: "🏢", desc: "新入社員が入社時の各種規則に同意する", color: "green" },
-    cookie_preferences: { icon: "🍪", desc: "Webサイト訪問者がCookieの利用設定を行う", color: "orange" },
+    service_signup: { icon: "👤", desc: "ユーザーがサービス登録時に個人情報の利用目的・データ項目ごとに同意する", color: "blue" },
+    contractor_nda: { icon: "🔒", desc: "業務委託の常駐者がNDA・セキュリティポリシー・個人情報取扱いに同意する", color: "purple" },
   };
 
   return (
