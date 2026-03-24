@@ -1,0 +1,10 @@
+.env
+*.pem
+*.key
+build/
+.gradle/
+*.jar
+scalardl-java-client-sdk/
+scalardl-java-client-sdk.zip
+.DS_Store
+.idea/

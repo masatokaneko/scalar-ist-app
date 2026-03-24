@@ -1,0 +1,59 @@
+services:
+  cassandra:
+    image: cassandra:3.11
+    container_name: scalar-ist-cassandra
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    environment:
+      - CASSANDRA_CLUSTER_NAME=scalar-ist-cluster
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  scalardl-ledger-schema-loader:
+    image: ghcr.io/scalar-labs/scalardl-schema-loader-cassandra:3.12.2
+    container_name: scalar-ist-ledger-schema-loader
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    environment:
+      - SCALAR_DL_LICENSING_LICENSE_KEY=${SCALAR_DL_LICENSING_LICENSE_KEY}
+    command:
+      - "-h"
+      - "cassandra"
+      - "-R"
+      - "1"
+    networks:
+      default:
+
+  scalar-ledger:
+    image: ghcr.io/scalar-labs/scalar-ledger:3.12.2
+    container_name: scalar-ist-ledger
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    ports:
+      - "50051:50051"
+      - "50053:50053"
+    volumes:
+      - ./config/ledger.properties:/scalar/ledger/ledger.properties
+    environment:
+      - SCALAR_DL_LICENSING_LICENSE_KEY=${SCALAR_DL_LICENSING_LICENSE_KEY}
+      - SCALAR_DL_LEDGER_PROOF_ENABLED=false
+
+  ist-schema-loader:
+    image: cassandra:3.11
+    container_name: scalar-ist-schema-loader
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./schema/ist-schema.cql:/ist-schema.cql
+    entrypoint: ["cqlsh", "cassandra", "-f", "/ist-schema.cql"]
+
+volumes:
+  cassandra-data:
