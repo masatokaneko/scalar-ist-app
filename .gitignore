@@ -10,3 +10,4 @@ scalardl-java-client-sdk.zip
 .idea/
 web/node_modules/
 web/.next/
+node_modules/
