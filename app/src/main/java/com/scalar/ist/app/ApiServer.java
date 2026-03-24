@@ -9,14 +9,19 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.json.Json;
 import javax.json.JsonObject;
 
 public class ApiServer {
 
   private final String propertiesPath;
+  // In-memory store for invitation tokens (demo purpose)
+  private final ConcurrentHashMap<String, Map<String, Object>> invitations = new ConcurrentHashMap<String, Map<String, Object>>();
 
   public ApiServer(String propertiesPath) {
     this.propertiesPath = propertiesPath;
@@ -43,6 +48,13 @@ public class ApiServer {
     app.post("/api/consent/approve", this::approveConsent);
     app.post("/api/consent/reject", this::rejectConsent);
     app.get("/api/consent/status", this::getConsentStatus);
+
+    // Invitation / Decision Request APIs
+    app.post("/api/invite/create", this::createInvitation);
+    app.get("/api/invite/{token}", this::getInvitation);
+    app.post("/api/invite/{token}/respond", this::respondToInvitation);
+    app.get("/api/scenarios", this::getScenarios);
+    app.post("/api/scenarios/seed", this::seedScenarios);
 
     app.start(port);
     System.out.println("API Server started on http://localhost:" + port);
@@ -258,6 +270,235 @@ public class ApiServer {
       } else {
         ctx.json(jsonMap("consent_status", "unknown"));
       }
+    } catch (Exception e) {
+      ctx.status(500).json(jsonMap("success", false, "error", e.getMessage()));
+    }
+  }
+
+  // === Invitation / Decision Request APIs ===
+
+  private void getScenarios(Context ctx) {
+    List<Map<String, Object>> scenarios = new ArrayList<Map<String, Object>>();
+    scenarios.add(scenario("service_signup", "サービス登録時の個人情報取得同意",
+        "consent", "granular",
+        new String[]{"アカウント作成・不正検知のための利用", "マーケティングメールの配信", "アクセス解析によるサービス改善"},
+        new boolean[]{true, false, false}));
+    scenarios.add(scenario("contractor_nda", "業務委託先NDA（秘密保持契約）",
+        "acknowledgement", "all_required",
+        new String[]{"秘密保持契約書への同意", "情報セキュリティポリシーの遵守"},
+        new boolean[]{true, true}));
+    scenarios.add(scenario("employee_onboarding", "入社時の規則同意",
+        "acknowledgement", "all_required",
+        new String[]{"就業規則への同意", "情報セキュリティポリシーへの同意", "個人情報取扱いへの同意", "ハラスメント防止規定への同意"},
+        new boolean[]{true, true, true, true}));
+    scenarios.add(scenario("cookie_preferences", "Cookie利用設定",
+        "preference", "granular",
+        new String[]{"必須Cookie（サイト機能）", "分析Cookie（アクセス解析）", "広告Cookie（ターゲティング広告）"},
+        new boolean[]{true, false, false}));
+    ctx.json(scenarios);
+  }
+
+  private Map<String, Object> scenario(String id, String title, String type, String mode,
+      String[] items, boolean[] required) {
+    Map<String, Object> s = new LinkedHashMap<String, Object>();
+    s.put("id", id);
+    s.put("title", title);
+    s.put("decisionType", type);
+    s.put("decisionMode", mode);
+    List<Map<String, Object>> choices = new ArrayList<Map<String, Object>>();
+    for (int i = 0; i < items.length; i++) {
+      Map<String, Object> c = new LinkedHashMap<String, Object>();
+      c.put("id", "item_" + i);
+      c.put("label", items[i]);
+      c.put("required", required[i]);
+      c.put("defaultValue", required[i]);
+      choices.add(c);
+    }
+    s.put("choices", choices);
+    return s;
+  }
+
+  private void seedScenarios(Context ctx) {
+    // Create consent statements + invitations for all 4 scenarios
+    List<Map<String, Object>> created = new ArrayList<Map<String, Object>>();
+    String[][] scenarios = {
+        {"service_signup", "サービス登録時の個人情報取得同意", "consent", "granular"},
+        {"contractor_nda", "業務委託先NDA（秘密保持契約）", "acknowledgement", "all_required"},
+        {"employee_onboarding", "入社時の規則同意", "acknowledgement", "all_required"},
+        {"cookie_preferences", "Cookie利用設定", "preference", "granular"},
+    };
+    String companyId = "scalar-labs.com";
+    String orgId = "9ca84f95-2e84-4707-8206-b93c9e78d7b7";
+
+    try (ScalarDLClient client = new ScalarDLClient(propertiesPath)) {
+      client.registerCertificate();
+      for (String[] sc : scenarios) {
+        long now = System.currentTimeMillis();
+        String csId = "cs01-" + orgId + "-" + now;
+        JsonObject argument = Json.createObjectBuilder()
+            .add("company_id", companyId)
+            .add("organization_id", orgId)
+            .add("version", "1")
+            .add("title", sc[1])
+            .add("abstract", sc[1] + "に関する文書です")
+            .add("consent_statement", sc[1] + "の本文")
+            .add("purpose_ids", Json.createArrayBuilder())
+            .add("data_set_schema_ids", Json.createArrayBuilder())
+            .add("benefit_ids", Json.createArrayBuilder())
+            .add("third_party_ids", Json.createArrayBuilder())
+            .add("optional_third_parties", Json.createObjectBuilder()
+                .add("third_party_ids", Json.createArrayBuilder())
+                .add("description", "任意の第三者提供先"))
+            .add("optional_purposes", Json.createArrayBuilder())
+            .add("created_at", now)
+            .add("_functions_", Json.createArrayBuilder().add("RegisterConsentStatement"))
+            .build();
+        client.executeContract("RegisterConsentStatement", argument);
+
+        // Publish
+        JsonObject pubArg = Json.createObjectBuilder()
+            .add("company_id", companyId)
+            .add("organization_id", orgId)
+            .add("consent_statement_id", csId)
+            .add("status", "published")
+            .add("updated_at", System.currentTimeMillis())
+            .add("_functions_", Json.createArrayBuilder().add("UpsertConsentStatementStatus"))
+            .build();
+        client.executeContract("UpdateConsentStatementStatus", pubArg);
+
+        // Create invitation
+        String token = UUID.randomUUID().toString().substring(0, 8);
+        Map<String, Object> inv = new LinkedHashMap<String, Object>();
+        inv.put("token", token);
+        inv.put("scenario", sc[0]);
+        inv.put("title", sc[1]);
+        inv.put("decisionType", sc[2]);
+        inv.put("decisionMode", sc[3]);
+        inv.put("consent_statement_id", csId);
+        inv.put("status", "pending");
+        inv.put("created_at", now);
+        invitations.put(token, inv);
+
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        result.put("scenario", sc[0]);
+        result.put("token", token);
+        result.put("url", "http://localhost:3001/c/" + token);
+        result.put("consent_statement_id", csId);
+        created.add(result);
+
+        Thread.sleep(50); // avoid timestamp collision
+      }
+    } catch (Exception e) {
+      ctx.status(500).json(jsonMap("success", false, "error", e.getMessage()));
+      return;
+    }
+    ctx.json(jsonMap("success", true, "invitations", created));
+  }
+
+  private void createInvitation(Context ctx) {
+    Map body = ctx.bodyAsClass(Map.class);
+    String csId = (String) body.get("consent_statement_id");
+    String scenario = (String) body.getOrDefault("scenario", "service_signup");
+    String titleStr = (String) body.getOrDefault("title", "同意依頼");
+    String type = (String) body.getOrDefault("decisionType", "consent");
+    String mode = (String) body.getOrDefault("decisionMode", "binary");
+    String recipientName = (String) body.getOrDefault("recipient_name", "");
+
+    String token = UUID.randomUUID().toString().substring(0, 8);
+    Map<String, Object> inv = new LinkedHashMap<String, Object>();
+    inv.put("token", token);
+    inv.put("scenario", scenario);
+    inv.put("title", titleStr);
+    inv.put("decisionType", type);
+    inv.put("decisionMode", mode);
+    inv.put("consent_statement_id", csId);
+    inv.put("recipient_name", recipientName);
+    inv.put("status", "pending");
+    inv.put("created_at", System.currentTimeMillis());
+    invitations.put(token, inv);
+
+    ctx.json(jsonMap("success", true, "token", token,
+        "url", "http://localhost:3001/c/" + token));
+  }
+
+  private void getInvitation(Context ctx) {
+    String token = ctx.pathParam("token");
+    Map<String, Object> inv = invitations.get(token);
+    if (inv == null) {
+      ctx.status(404).json(jsonMap("error", "招待が見つかりません"));
+      return;
+    }
+
+    // Get scenario choices
+    List<Map<String, Object>> choices = new ArrayList<Map<String, Object>>();
+    String scenario = (String) inv.get("scenario");
+    if ("service_signup".equals(scenario)) {
+      choices.add(choice("必須", "アカウント作成・不正検知のための利用", true));
+      choices.add(choice("任意", "マーケティングメールの配信", false));
+      choices.add(choice("任意", "アクセス解析によるサービス改善", false));
+    } else if ("contractor_nda".equals(scenario)) {
+      choices.add(choice("必須", "秘密保持契約書への同意", true));
+      choices.add(choice("必須", "情報セキュリティポリシーの遵守", true));
+    } else if ("employee_onboarding".equals(scenario)) {
+      choices.add(choice("必須", "就業規則への同意", true));
+      choices.add(choice("必須", "情報セキュリティポリシーへの同意", true));
+      choices.add(choice("必須", "個人情報取扱いへの同意", true));
+      choices.add(choice("必須", "ハラスメント防止規定への同意", true));
+    } else if ("cookie_preferences".equals(scenario)) {
+      choices.add(choice("必須", "必須Cookie（サイト機能）", true));
+      choices.add(choice("任意", "分析Cookie（アクセス解析）", false));
+      choices.add(choice("任意", "広告Cookie（ターゲティング広告）", false));
+    }
+
+    Map<String, Object> response = new LinkedHashMap<String, Object>(inv);
+    response.put("choices", choices);
+    ctx.json(response);
+  }
+
+  private Map<String, Object> choice(String tag, String label, boolean required) {
+    Map<String, Object> c = new LinkedHashMap<String, Object>();
+    c.put("tag", tag);
+    c.put("label", label);
+    c.put("required", required);
+    return c;
+  }
+
+  private void respondToInvitation(Context ctx) {
+    String token = ctx.pathParam("token");
+    Map<String, Object> inv = invitations.get(token);
+    if (inv == null) {
+      ctx.status(404).json(jsonMap("error", "招待が見つかりません"));
+      return;
+    }
+    if ("completed".equals(inv.get("status"))) {
+      ctx.status(400).json(jsonMap("error", "この依頼は既に回答済みです"));
+      return;
+    }
+
+    Map body = ctx.bodyAsClass(Map.class);
+    String decision = (String) body.getOrDefault("decision", "approved");
+    String csId = (String) inv.get("consent_statement_id");
+    long now = System.currentTimeMillis();
+
+    JsonObject argument = Json.createObjectBuilder()
+        .add("consent_statement_id", csId)
+        .add("consent_status", decision)
+        .add("consented_detail", Json.createObjectBuilder())
+        .add("rejected_detail", Json.createObjectBuilder())
+        .add("updated_at", now)
+        .add("_functions_", Json.createArrayBuilder().add("UpsertConsentStatus"))
+        .build();
+
+    String dsProps = propertiesPath.replace("controller", "data_subject");
+    try (ScalarDLClient client = new ScalarDLClient(dsProps)) {
+      client.registerCertificate();
+      client.executeContract("UpsertConsentStatus", argument);
+      inv.put("status", "completed");
+      inv.put("decision", decision);
+      inv.put("responded_at", now);
+      ctx.json(jsonMap("success", true, "decision", decision,
+          "message", "approved".equals(decision) ? "同意が記録されました" : "拒否が記録されました",
+          "timestamp", now));
     } catch (Exception e) {
       ctx.status(500).json(jsonMap("success", false, "error", e.getMessage()));
     }
