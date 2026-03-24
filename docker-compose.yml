@@ -1,59 +1,70 @@
 services:
-  cassandra:
-    image: cassandra:3.11
-    container_name: scalar-ist-cassandra
+  postgres:
+    image: postgres:15
+    container_name: scalar-ist-postgres
     ports:
-      - "9042:9042"
+      - "5432:5432"
     volumes:
-      - cassandra-data:/var/lib/cassandra
+      - postgres-data:/var/lib/postgresql/data
     environment:
-      - CASSANDRA_CLUSTER_NAME=scalar-ist-cluster
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=scalarist
     healthcheck:
-      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
       retries: 10
 
   scalardl-ledger-schema-loader:
-    image: ghcr.io/scalar-labs/scalardl-schema-loader-cassandra:3.12.2
+    image: ghcr.io/scalar-labs/scalardl-schema-loader:3.12.2
     container_name: scalar-ist-ledger-schema-loader
     depends_on:
-      cassandra:
+      postgres:
         condition: service_healthy
+    volumes:
+      - ./config/scalardb-for-schema.properties:/scalardb.properties
     environment:
-      - SCALAR_DL_LICENSING_LICENSE_KEY=${SCALAR_DL_LICENSING_LICENSE_KEY}
+      - SCALAR_DL_LICENSING_LICENSE_KEY=${SCALAR_DL_LEDGER_LICENSING_LICENSE_KEY}
+      - SCALAR_DL_LICENSING_LICENSE_CHECK_CERT_PEM=${SCALAR_DL_LEDGER_LICENSING_LICENSE_CHECK_CERT_PEM}
     command:
-      - "-h"
-      - "cassandra"
-      - "-R"
-      - "1"
-    networks:
-      default:
+      - "--config"
+      - "/scalardb.properties"
+      - "--coordinator"
 
-  scalar-ledger:
-    image: ghcr.io/scalar-labs/scalar-ledger:3.12.2
+  scalardl-ledger:
+    image: ghcr.io/scalar-labs/scalardl-ledger:3.12.2
     container_name: scalar-ist-ledger
     depends_on:
-      cassandra:
+      postgres:
         condition: service_healthy
     ports:
       - "50051:50051"
       - "50053:50053"
-    volumes:
-      - ./config/ledger.properties:/scalar/ledger/ledger.properties
     environment:
-      - SCALAR_DL_LICENSING_LICENSE_KEY=${SCALAR_DL_LICENSING_LICENSE_KEY}
+      - SCALAR_DB_CONTACT_POINTS=jdbc:postgresql://postgres:5432/scalarist
+      - SCALAR_DB_USERNAME=postgres
+      - SCALAR_DB_PASSWORD=postgres
+      - SCALAR_DB_STORAGE=jdbc
       - SCALAR_DL_LEDGER_PROOF_ENABLED=false
+      - SCALAR_DL_LEDGER_DIRECT_ASSET_ACCESS_ENABLED=true
+      - SCALAR_DL_LICENSING_LICENSE_KEY=${SCALAR_DL_LEDGER_LICENSING_LICENSE_KEY}
+      - SCALAR_DL_LICENSING_LICENSE_CHECK_CERT_PEM=${SCALAR_DL_LEDGER_LICENSING_LICENSE_CHECK_CERT_PEM}
 
   ist-schema-loader:
-    image: cassandra:3.11
+    image: ghcr.io/scalar-labs/scalardb-schema-loader:3.17.1
     container_name: scalar-ist-schema-loader
     depends_on:
-      cassandra:
+      postgres:
         condition: service_healthy
     volumes:
-      - ./schema/ist-schema.cql:/ist-schema.cql
-    entrypoint: ["cqlsh", "cassandra", "-f", "/ist-schema.cql"]
+      - ./config/scalardb-for-schema.properties:/scalardb.properties
+      - ./schema/ist.transaction.json:/schema.json
+    command:
+      - "--config"
+      - "/scalardb.properties"
+      - "-f"
+      - "/schema.json"
 
 volumes:
-  cassandra-data:
+  postgres-data:
