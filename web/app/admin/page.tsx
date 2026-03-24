@@ -7,6 +7,8 @@ const API = "http://localhost:8081/api";
 type ConsentDoc = { id: string; title: string; status: string; created_at: number; company_id: string };
 type ConsentRecord = { consent_statement_id: string; consent_status: string; data_subject_id: string; created_at: number };
 type Stats = { total_statements: number; published: number; draft: number; approved: number; rejected: number };
+type ValidationResult = { asset_id: string; status: string; message: string };
+type ValidationResponse = { results: ValidationResult[]; total: number; valid: number; invalid: number };
 
 export default function Home() {
   const [docs, setDocs] = useState<ConsentDoc[]>([]);
@@ -16,7 +18,15 @@ export default function Home() {
   const [purposeName, setPurposeName] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"dashboard" | "create">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "create" | "validate">("dashboard");
+
+  // Invite link state
+  const [inviteLink, setInviteLink] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  // Validation state
+  const [validation, setValidation] = useState<ValidationResponse | null>(null);
+  const [validating, setValidating] = useState(false);
 
   const showMsg = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 4000); };
 
@@ -55,6 +65,8 @@ export default function Home() {
   const createConsent = async () => {
     if (!title) return;
     setLoading(true);
+    setInviteLink("");
+    setCopied(false);
     try {
       const res = await fetch(`${API}/consent/create`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -63,11 +75,50 @@ export default function Home() {
       const data = await res.json();
       if (data.success) {
         showMsg(`✓ 同意文書を作成しました`);
+        const csId = data.consent_statement_id || data.id;
+        if (csId) {
+          try {
+            const inviteRes = await fetch(`${API}/invite/create`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ consent_statement_id: csId }),
+            });
+            const inviteData = await inviteRes.json();
+            if (inviteData.token) {
+              setInviteLink(`http://localhost:3001/c/${inviteData.token}`);
+              showMsg("✓ 同意文書を作成し、招待リンクを生成しました");
+            }
+          } catch {
+            showMsg("✓ 同意文書を作成しましたが、招待リンクの生成に失敗しました");
+          }
+        }
         setTitle("");
         await loadDashboard();
       } else { showMsg(`✗ ${data.error}`); }
     } catch (e: any) { showMsg(`✗ ${e.message}`); }
     setLoading(false);
+  };
+
+  const copyInviteLink = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      showMsg("✗ クリップボードへのコピーに失敗しました");
+    }
+  };
+
+  const runValidation = async () => {
+    setValidating(true);
+    setValidation(null);
+    try {
+      const res = await fetch(`${API}/validate`);
+      const data: ValidationResponse = await res.json();
+      setValidation(data);
+    } catch {
+      showMsg("✗ 検証APIに接続できません");
+    }
+    setValidating(false);
   };
 
   const action = async (endpoint: string, csId: string, successMsg: string) => {
@@ -116,6 +167,10 @@ export default function Home() {
           <button onClick={() => setTab("create")}
             className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === "create" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
             新規作成
+          </button>
+          <button onClick={() => setTab("validate")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === "validate" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+            台帳検証
           </button>
           <button onClick={loadDashboard}
             className="px-4 py-2 rounded-lg text-sm bg-gray-100 text-gray-600 hover:bg-gray-200">
@@ -297,6 +352,90 @@ export default function Home() {
                 作成
               </button>
             </div>
+
+            {inviteLink && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm font-medium text-blue-800 mb-2">招待リンクが生成されました</p>
+                <div className="flex gap-2 items-center">
+                  <input type="text" readOnly value={inviteLink}
+                    className="flex-1 bg-white border border-blue-200 rounded-md px-3 py-2 text-sm font-mono text-blue-700" />
+                  <button onClick={copyInviteLink}
+                    className={`px-4 py-2 rounded-md text-sm font-medium ${copied ? "bg-green-600 text-white" : "bg-blue-600 text-white hover:bg-blue-500"}`}>
+                    {copied ? "コピー済み" : "リンクをコピー"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {tab === "validate" && (
+        <>
+          <section className="bg-white rounded-xl shadow-sm p-6 mb-6 border">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">台帳検証</h2>
+                <p className="text-gray-400 text-sm mt-1">同意記録の改竄検知を実行します</p>
+              </div>
+              <button onClick={runValidation} disabled={validating}
+                className="bg-gray-900 text-white px-6 py-2.5 rounded-lg text-sm hover:bg-gray-700 disabled:opacity-40">
+                {validating ? "検証中..." : "全件検証する"}
+              </button>
+            </div>
+
+            {validation && (
+              <>
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-gray-50 rounded-lg p-4 border">
+                    <p className="text-2xl font-bold">{validation.total}</p>
+                    <p className="text-gray-400 text-xs mt-1">検証対象</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                    <p className="text-2xl font-bold text-green-600">{validation.valid}</p>
+                    <p className="text-gray-400 text-xs mt-1">OK</p>
+                  </div>
+                  <div className={`rounded-lg p-4 border ${validation.invalid > 0 ? "bg-red-50 border-red-200" : "bg-gray-50"}`}>
+                    <p className={`text-2xl font-bold ${validation.invalid > 0 ? "text-red-600" : "text-gray-400"}`}>{validation.invalid}</p>
+                    <p className="text-gray-400 text-xs mt-1">NG</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                      <tr>
+                        <th className="px-6 py-3 text-left">結果</th>
+                        <th className="px-6 py-3 text-left">アセットID</th>
+                        <th className="px-6 py-3 text-left">メッセージ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {validation.results.map((r, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-6 py-3">
+                            <span className={`text-sm ${r.status === "valid" ? "text-green-600" : "text-red-600"}`}>
+                              {r.status === "valid" ? "OK" : "NG"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-xs font-mono text-gray-500">{r.asset_id}</td>
+                          <td className="px-6 py-3 text-gray-600">{r.message}</td>
+                        </tr>
+                      ))}
+                      {validation.results.length === 0 && (
+                        <tr><td colSpan={3} className="px-6 py-10 text-center text-gray-400">検証対象の記録がありません</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {!validation && !validating && (
+              <div className="text-center py-10 text-gray-400 text-sm">
+                「全件検証する」ボタンを押して検証を実行してください
+              </div>
+            )}
           </section>
         </>
       )}

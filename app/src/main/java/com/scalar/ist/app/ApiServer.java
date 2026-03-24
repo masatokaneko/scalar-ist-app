@@ -1,12 +1,15 @@
 package com.scalar.ist.app;
 
 import com.scalar.dl.ledger.model.ContractExecutionResult;
+import com.scalar.dl.ledger.model.LedgerValidationResult;
+import com.scalar.dl.ledger.service.StatusCode;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -53,6 +56,7 @@ public class ApiServer {
     app.post("/api/invite/create", this::createInvitation);
     app.get("/api/invite/{token}", this::getInvitation);
     app.post("/api/invite/{token}/respond", this::respondToInvitation);
+    app.get("/api/validate", this::validateLedger);
     app.get("/api/scenarios", this::getScenarios);
     app.post("/api/scenarios/seed", this::seedScenarios);
 
@@ -273,6 +277,75 @@ public class ApiServer {
     } catch (Exception e) {
       ctx.status(500).json(jsonMap("success", false, "error", e.getMessage()));
     }
+  }
+
+  // === Ledger Validation API ===
+
+  private void validateLedger(Context ctx) {
+    String dbUrl = "jdbc:postgresql://localhost:5433/scalarist";
+    List<Map<String, Object>> results = new ArrayList<Map<String, Object>>();
+    int validCount = 0;
+    int invalidCount = 0;
+
+    try (Connection conn = DriverManager.getConnection(dbUrl, "postgres", "postgres")) {
+      // Get all consent records with their titles
+      String sql = "SELECT c.consent_statement_id, c.data_subject_id, cs.title "
+          + "FROM ist.consent c "
+          + "LEFT JOIN ist.consent_statement cs ON c.consent_statement_id = cs.consent_statement_id "
+          + "ORDER BY c.created_at DESC";
+      List<String[]> records = new ArrayList<String[]>();
+      try (PreparedStatement ps = conn.prepareStatement(sql);
+           ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          records.add(new String[]{
+              rs.getString("consent_statement_id"),
+              rs.getString("data_subject_id"),
+              rs.getString("title")
+          });
+        }
+      }
+
+      // Validate each consent record against ScalarDL ledger
+      try (ScalarDLClient client = new ScalarDLClient(propertiesPath)) {
+        client.registerCertificate();
+        for (String[] record : records) {
+          String assetId = "ct01-" + record[0] + "-" + record[1];
+          String title = record[2] != null ? record[2] : "";
+          String dataSubject = record[1];
+          Map<String, Object> entry = new LinkedHashMap<String, Object>();
+          entry.put("asset_id", assetId);
+          entry.put("title", title);
+          entry.put("data_subject", dataSubject);
+          try {
+            LedgerValidationResult result = client.validateLedger(assetId);
+            if (result.getCode() == StatusCode.OK) {
+              entry.put("status", "valid");
+              validCount++;
+            } else {
+              entry.put("status", "invalid");
+              entry.put("reason", result.getCode().name());
+              invalidCount++;
+            }
+          } catch (Exception e) {
+            entry.put("status", "invalid");
+            entry.put("reason", e.getMessage());
+            invalidCount++;
+          }
+          entry.put("verified_at", Instant.now().toString());
+          results.add(entry);
+        }
+      }
+    } catch (Exception e) {
+      ctx.status(500).json(jsonMap("error", e.getMessage()));
+      return;
+    }
+
+    Map<String, Object> response = new LinkedHashMap<String, Object>();
+    response.put("results", results);
+    response.put("total", results.size());
+    response.put("valid", validCount);
+    response.put("invalid", invalidCount);
+    ctx.json(response);
   }
 
   // === Invitation / Decision Request APIs ===

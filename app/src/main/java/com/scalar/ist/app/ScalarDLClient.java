@@ -4,6 +4,7 @@ import com.scalar.dl.client.config.ClientConfig;
 import com.scalar.dl.client.service.ClientService;
 import com.scalar.dl.client.service.ClientServiceFactory;
 import com.scalar.dl.ledger.model.ContractExecutionResult;
+import com.scalar.dl.ledger.model.LedgerValidationResult;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -43,6 +44,10 @@ public class ScalarDLClient implements AutoCloseable {
 
   public ContractExecutionResult executeContract(String contractId, JsonObject argument) {
     return service.executeContract(contractId, argument);
+  }
+
+  public LedgerValidationResult validateLedger(String assetId) {
+    return service.validateLedger(assetId);
   }
 
   public void registerCertificate() {
