@@ -8,3 +8,5 @@ scalardl-java-client-sdk/
 scalardl-java-client-sdk.zip
 .DS_Store
 .idea/
+web/node_modules/
+web/.next/
