@@ -3,7 +3,13 @@ package com.scalar.ist.app;
 import com.scalar.dl.ledger.model.ContractExecutionResult;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import javax.json.Json;
 import javax.json.JsonObject;
@@ -30,6 +36,7 @@ public class ApiServer {
     });
 
     app.get("/api/health", ctx -> ctx.json(jsonMap("status", "ok")));
+    app.get("/api/dashboard", this::getDashboard);
     app.post("/api/purpose", this::registerPurpose);
     app.post("/api/consent/create", this::createConsent);
     app.post("/api/consent/publish", this::publishConsent);
@@ -39,6 +46,75 @@ public class ApiServer {
 
     app.start(port);
     System.out.println("API Server started on http://localhost:" + port);
+  }
+
+  private void getDashboard(Context ctx) {
+    String dbUrl = "jdbc:postgresql://localhost:5433/scalarist";
+    try (Connection conn = DriverManager.getConnection(dbUrl, "postgres", "postgres")) {
+      Map<String, Object> dashboard = new HashMap<String, Object>();
+
+      // 同意文書一覧
+      List<Map<String, Object>> statements = new ArrayList<Map<String, Object>>();
+      String sql = "SELECT consent_statement_id, title, status, created_at, company_id "
+          + "FROM ist.consent_statement ORDER BY created_at DESC";
+      try (PreparedStatement ps = conn.prepareStatement(sql);
+           ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          Map<String, Object> row = new HashMap<String, Object>();
+          row.put("id", rs.getString("consent_statement_id"));
+          row.put("title", rs.getString("title"));
+          row.put("status", rs.getString("status"));
+          row.put("created_at", rs.getLong("created_at"));
+          row.put("company_id", rs.getString("company_id"));
+          statements.add(row);
+        }
+      }
+
+      // 同意状態一覧
+      List<Map<String, Object>> consents = new ArrayList<Map<String, Object>>();
+      String cSql = "SELECT consent_statement_id, consent_status, data_subject_id, created_at "
+          + "FROM ist.consent ORDER BY created_at DESC";
+      try (PreparedStatement ps = conn.prepareStatement(cSql);
+           ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          Map<String, Object> row = new HashMap<String, Object>();
+          row.put("consent_statement_id", rs.getString("consent_statement_id"));
+          row.put("consent_status", rs.getString("consent_status"));
+          row.put("data_subject_id", rs.getString("data_subject_id"));
+          row.put("created_at", rs.getLong("created_at"));
+          consents.add(row);
+        }
+      }
+
+      // 統計
+      int total = statements.size();
+      int published = 0;
+      int draft = 0;
+      int approved = 0;
+      int rejected = 0;
+      for (Map<String, Object> s : statements) {
+        if ("published".equals(s.get("status"))) published++;
+        if ("draft".equals(s.get("status"))) draft++;
+      }
+      for (Map<String, Object> c : consents) {
+        if ("approved".equals(c.get("consent_status"))) approved++;
+        if ("rejected".equals(c.get("consent_status"))) rejected++;
+      }
+
+      Map<String, Object> stats = new HashMap<String, Object>();
+      stats.put("total_statements", total);
+      stats.put("published", published);
+      stats.put("draft", draft);
+      stats.put("approved", approved);
+      stats.put("rejected", rejected);
+
+      dashboard.put("stats", stats);
+      dashboard.put("statements", statements);
+      dashboard.put("consents", consents);
+      ctx.json(dashboard);
+    } catch (Exception e) {
+      ctx.status(500).json(jsonMap("error", e.getMessage()));
+    }
   }
 
   private void registerPurpose(Context ctx) {
